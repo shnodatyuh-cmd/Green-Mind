@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">Green Mind</title>
+  <desc id="desc">شعار Green Mind: العقل الأخضر</desc>
+  <rect width="96" height="96" rx="27" fill="#153f35"/>
+  <path d="M48 73V44" fill="none" stroke="#f7f5ea" stroke-linecap="round" stroke-width="5.5"/>
+  <path d="M47 54C31 54 23 47 22 33c15-1 25 5 27 18" fill="#a8d5b5"/>
+  <path d="M49 46c1-17 11-25 27-24 0 15-8 24-24 27" fill="#f7f5ea"/>
+  <path d="M48 72c-8 0-14 3-18 8h36c-4-5-10-8-18-8Z" fill="#e6b95c"/>
+  <circle cx="72" cy="69" r="4" fill="#e6b95c"/>
+</svg>

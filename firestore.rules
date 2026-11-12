@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function verifiedUser() { return signedIn() && request.auth.token.email_verified == true; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function activeUser() { return verifiedUser() && userDoc().data.active == true; }
+    function roleIs(r) { return activeUser() && userDoc().data.role == r; }
+    function staff() { return roleIs('teacher') || roleIs('admin') || roleIs('superAdmin'); }
+    function admin() { return roleIs('admin') || roleIs('superAdmin'); }
+    function validProfileUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','photoURL','updatedAt'])
+        && (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() <= 80))
+        && (!('photoURL' in request.resource.data) || (request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 500));
+    }
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || admin());
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid','displayName','email','photoURL','role','active','className','grade','createdAt','updatedAt'])
+        && request.resource.data.uid == uid && request.resource.data.role == 'student'
+        && request.resource.data.active == true && request.resource.data.email == request.auth.token.email
+        && request.resource.data.className == '' && request.resource.data.grade == '';
+      allow update: if signedIn() && request.auth.uid == uid && validProfileUpdate();
+      allow delete: if false;
+    }
+    match /competitions/{id} {
+      allow read: if verifiedUser() && (resource.data.published == true || staff());
+      allow create, update, delete: if false; // Admin changes go through an audited callable function.
+    }
+    match /siteSettings/{id} {
+      allow read: if id == 'public';
+      allow create, update, delete: if false; // Website settings are changed by an audited admin callable.
+    }
+    match /projects/{id} {
+      allow read: if verifiedUser() && (resource.data.status == 'approved' || staff());
+      allow create, update, delete: if false; // Project mutations go through audited callable functions.
+    }
+    match /publicProjects/{id} {
+      allow read: if verifiedUser() && resource.data.status == 'approved';
+      allow create, update, delete: if false; // Public listing contains only approved display fields.
+    }
+    match /projectMembers/{id} { allow read: if staff(); allow write: if false; }
+    match /votes/{id} {
+      allow read: if verifiedUser() && (resource.data.voterUid == request.auth.uid || staff());
+      allow write: if false; // Votes are created by the trusted callable function only.
+    }
+    match /voteTotals/{id} {
+      allow read: if verifiedUser() && (staff() || get(/databases/$(database)/documents/competitions/$(resource.data.competitionId)).data.showLiveResults == true || request.time >= get(/databases/$(database)/documents/competitions/$(resource.data.competitionId)).data.endsAt);
+      allow write: if false;
+    }
+    match /auditLogs/{id} {
+      allow read: if admin();
+      allow write: if false;
+    }
+    match /challenges/{id} {
+      allow read: if staff();
+      allow create, update, delete: if false; // تحديات المدرسة تُحفظ عبر إجراء خادمي موثق.
+      match /submissions/{sid} {
+        allow read: if verifiedUser() && (resource.data.studentUid == request.auth.uid || staff());
+        allow create: if verifiedUser() && request.resource.data.keys().hasOnly(['studentUid','challengeId','description','imagePath','status','createdAt','updatedAt'])
+          && request.resource.data.studentUid == request.auth.uid && request.resource.data.challengeId == id
+          && request.resource.data.status == 'pending' && get(/databases/$(database)/documents/challenges/$(id)).data.status == 'published'
+          && request.time >= get(/databases/$(database)/documents/challenges/$(id)).data.startsAt
+          && request.time < get(/databases/$(database)/documents/challenges/$(id)).data.endsAt
+          && request.resource.data.description is string
+          && request.resource.data.description.size() <= 1000 && request.resource.data.imagePath is string
+          && request.resource.data.imagePath.size() <= 300;
+        allow update, delete: if admin();
+      }
+    }
+    match /publicChallenges/{id} {
+      allow read: if resource.data.status == 'published';
+      allow create, update, delete: if false; // نسخة عامة محدودة البيانات، يحدّثها الخادم فقط.
+    }
+    match /teams/{id} { allow read: if verifiedUser(); allow write: if admin(); }
+    match /announcements/{id} { allow read: if verifiedUser(); allow write: if admin(); }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

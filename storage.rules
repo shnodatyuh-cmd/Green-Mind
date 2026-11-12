@@ -1,0 +1,28 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function verifiedUser() { return signedIn() && request.auth.token.email_verified == true; }
+    function userDoc() { return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)); }
+    function activeUser() { return verifiedUser() && userDoc().data.active == true; }
+    function staff() { return activeUser() && (userDoc().data.role in ['teacher','admin','superAdmin']); }
+    match /project-images/{projectId}/{fileName} {
+      allow read: if verifiedUser() && (staff() || firestore.get(/databases/(default)/documents/projects/$(projectId)).data.status == 'approved');
+      allow create, update: if staff() && request.resource.size < 1 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if staff();
+    }
+    match /submissions/{uid}/{fileName} {
+      allow read: if verifiedUser() && (request.auth.uid == uid || staff());
+      allow create: if activeUser() && request.auth.uid == uid && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow update, delete: if staff();
+    }
+    match /profile-images/{uid}/{fileName} {
+      allow read: if verifiedUser() && (request.auth.uid == uid || staff());
+      allow write: if activeUser() && request.auth.uid == uid && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

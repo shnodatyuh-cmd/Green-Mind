@@ -3,7 +3,7 @@
   "private": true,
   "main": "functions.js",
   "engines": {
-    "node": "20"
+    "node": "26.x"
   },
   "scripts": {
     "test:rules": "firebase emulators:exec --only firestore,storage \"node --test security-rules.test.js\""

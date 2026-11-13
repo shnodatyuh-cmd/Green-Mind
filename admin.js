@@ -8,11 +8,14 @@ function gate(){const ok=allowed();$('adminGate').classList.toggle('d-none',ok);
 $('adminLoginForm').addEventListener('submit',async e=>{
  e.preventDefault();$('adminError').textContent='';$('adminVerifyButton').hidden=true;
  if(!gm)return $('adminError').textContent='إعداد Firebase غير مكتمل.';
+ let stage='تسجيل الدخول';
  try{
   if(!sdk)sdk=await modules();
   const credential=await sdk.auth.signInWithEmailAndPassword(gm.auth,$('adminEmail').value.trim(),$('adminPassword').value);
   const user=credential.user;
+  stage='تحديث حالة البريد';
   await sdk.auth.reload(user);
+  stage='قراءة مستند users';
   const snap=await sdk.fs.getDoc(sdk.fs.doc(gm.db,'users',user.uid));
   const profile=snap.exists()?snap.data():null;
   gm.user=user;gm.profile=profile;
@@ -20,8 +23,14 @@ $('adminLoginForm').addEventListener('submit',async e=>{
   if(!profile){$('adminError').textContent='لم يتم العثور على مستند لهذا الحساب داخل users. تأكد أن Document ID يطابق UID في Authentication.';await sdk.auth.signOut(gm.auth);gm.user=null;gm.profile=null;return;}
   if(profile.active!==true){$('adminError').textContent='المستند موجود، لكن active يجب أن يكون Boolean وقيمته true.';await sdk.auth.signOut(gm.auth);gm.user=null;gm.profile=null;return;}
   if(!['admin','superAdmin'].includes(String(profile.role||'').trim())){$('adminError').textContent='قيمة role في المستند يجب أن تكون النص admin أو superAdmin.';await sdk.auth.signOut(gm.auth);gm.user=null;gm.profile=null;return;}
+  stage='فتح لوحة الإدارة';
   gate();
- }catch(err){$('adminError').textContent=err.code==='auth/invalid-credential'?'بيانات الدخول غير صحيحة.':'تعذر تسجيل الدخول. راجع إعدادات Firebase.';}
+ }catch(err){
+  const code=String(err?.code||err?.name||'unknown');
+  console.error('Green Mind admin sign-in failed:',code);
+  const hint=code==='auth/invalid-credential'?'بيانات البريد أو كلمة المرور غير صحيحة.':code==='auth/too-many-requests'?'محاولات كثيرة؛ انتظر قليلًا ثم أعد المحاولة.':code==='auth/network-request-failed'?'تعذر الاتصال؛ تحقق من الإنترنت.':code==='auth/operation-not-allowed'?'فعّل Email/Password في Firebase Authentication.':code==='permission-denied'?'قواعد Firestore تمنع قراءة مستند users.':'راجع رمز الخطأ لمعرفة إعداد Firebase الناقص.';
+  $('adminError').textContent=`${hint} (المرحلة: ${stage}؛ الرمز: ${code})`;
+ }
 });$('adminVerifyButton').addEventListener('click',async()=>{
  try{
   if(!sdk)sdk=await modules();
@@ -46,5 +55,6 @@ async function renderProjects(){$('adminProjectList').innerHTML=projects.length?
 async function compressProjectImage(file){if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15*1024*1024)throw new Error('صورة غير مدعومة أو أكبر من ١٥ ميجابايت.');const bitmap=await createImageBitmap(file);for(const edge of [1400,1150,900]){const ratio=Math.min(1,edge/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*ratio));canvas.height=Math.max(1,Math.round(bitmap.height*ratio));canvas.getContext('2d',{alpha:false}).drawImage(bitmap,0,0,canvas.width,canvas.height);for(const quality of [.82,.7,.58]){const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));if(blob&&blob.size<900*1024){bitmap.close();return new File([blob],'project.webp',{type:blob.type||'image/webp',lastModified:Date.now()});}}}bitmap.close();throw new Error('تعذر ضغط الصورة إلى أقل من ٩٠٠ كيلوبايت.');}
 $('adminProjectForm').addEventListener('submit',async e=>{e.preventDefault();if(!allowed())return;let file=$('projectImage').files[0];const old=projects.find(p=>p.id===$('projectId').value);if(!file&&!old?.imagePath)return toast('اختر صورة للمشروع.');try{const id=$('projectId').value||crypto.randomUUID();let imagePath=old?.imagePath;if(file){file=await compressProjectImage(file);const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type]||'webp',path='project-images/'+id+'/'+crypto.randomUUID()+'.'+ext;await sdk.storage.uploadBytes(sdk.storage.ref(gm.storage,path),file,{contentType:file.type});imagePath=path;}await callable('saveProject',{projectId:id,competitionId:$('projectCompetition').value,name:$('projectName').value,teamName:$('projectTeam').value,className:$('projectClass').value,grade:$('projectGrade').value,category:$('projectCategory').value,description:$('projectDescription').value,imagePath,videoUrl:$('projectVideo').value,studentUids:$('projectMembers').value.split(/[,،\s]+/).map(x=>x.trim()).filter(Boolean)});$('adminProjectForm').reset();$('projectId').value='';await loadAll();toast('تم ضغط الصورة وحفظ المشروع.');}catch(e){toast(e.message||'تعذر تسجيل المشروع.');}});
 async function renderScores(){if(!competitions.length){$('adminVoteScores').innerHTML='<p>أنشئ مسابقة لمتابعة أصوات المشاريع.</p>';return;}const f=sdk.fs;const blocks=[];for(const c of competitions){const q=await f.getDocs(f.query(f.collection(gm.db,'voteTotals'),f.where('competitionId','==',c.id)));const counts=q.docs.map(d=>d.data());const total=counts.reduce((n,x)=>n+(Number(x.count)||0),0);const names=new Map(projects.filter(p=>p.competitionId===c.id).map(p=>[p.id,p.name]));const rows=counts.map(x=>({name:names.get(x.projectId)||'مشروع غير متاح',votes:Number(x.count)||0})).sort((a,b)=>b.votes-a.votes);blocks.push('<article class="score-panel"><h3>'+esc(c.name)+' · '+total+' صوت</h3>'+(rows.length?rows.map((r,i)=>'<p><b>'+String(i+1).padStart(2,'0')+'</b> '+esc(r.name)+' <strong>'+r.votes+' نقطة / '+r.votes+' صوت</strong></p>').join(''):'<small>لم تُسجّل أصوات بعد.</small>')+'</article>');}$('adminVoteScores').innerHTML='<h3>إحصاءات التصويت للمشرف</h3>'+blocks.join('');}
+
 
 

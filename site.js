@@ -9,7 +9,16 @@ if(required.every(key=>Boolean(firebaseConfig[key]))){
  const app=initializeApp(firebaseConfig);const auth=getAuth(app),db=getFirestore(app),storage=getStorage(app),functions=getFunctions(app);
  if(firebaseConfig.appCheckSiteKey){const {initializeAppCheck,ReCaptchaV3Provider}=await import('https://www.gstatic.com/firebasejs/13.3.0/firebase-app-check.js');initializeAppCheck(app,{provider:new ReCaptchaV3Provider(firebaseConfig.appCheckSiteKey),isTokenAutoRefreshEnabled:true});}
  gm={app,auth,db,storage,functions,profile:null,user:null,showToast(message){const box=$('toastMessage');if(box){box.textContent=message;bootstrap.Toast.getOrCreateInstance(box,{delay:4500}).show();}}};window.GreenMind=gm;
- onAuthStateChanged(auth,async user=>{gm.user=user;gm.profile=null;if(user){try{const snap=await getDoc(doc(db,'users',user.uid));if(snap.exists())gm.profile=snap.data();}catch{}}document.dispatchEvent(new CustomEvent('greenmind-auth'));});
+ let authLoadRevision=0;
+ onAuthStateChanged(auth,async user=>{
+  const revision=++authLoadRevision;
+  gm.user=user;gm.profile=null;
+  let profile=null;
+  if(user){try{const snap=await getDoc(doc(db,'users',user.uid));if(snap.exists())profile=snap.data();}catch{}}
+  if(revision!==authLoadRevision||gm.user?.uid!==user?.uid)return;
+  gm.profile=profile;
+  document.dispatchEvent(new CustomEvent('greenmind-auth'));
+ });
  const form=$('studentAuthForm');if(form){let creating=false;$('registerToggle').onclick=()=>{creating=!creating;$('signupFields').classList.toggle('d-none',!creating);$('studentName').required=creating;$('studentAuthSubmit').textContent=creating?'إنشاء حساب طالب':'تسجيل الدخول';$('registerToggle').textContent=creating?'لديك حساب؟ سجّل الدخول':'إنشاء حساب طالب';};form.addEventListener('submit',async e=>{e.preventDefault();const email=$('studentEmail').value.trim(),password=$('studentPassword').value;try{if(creating){const displayName=$('studentName').value.trim(),credential=await createUserWithEmailAndPassword(auth,email,password);await updateProfile(credential.user,{displayName});await setDoc(doc(db,'users',credential.user.uid),{uid:credential.user.uid,displayName,email,role:'student',active:true,className:'',grade:'',createdAt:new Date(),updatedAt:new Date()});await sendEmailVerification(credential.user);await signOut(auth);form.reset();creating=false;$('signupFields').classList.add('d-none');$('studentAuthSubmit').textContent='تسجيل الدخول';$('registerToggle').textContent='إنشاء حساب طالب';gm.showToast('تحقق من بريدك الإلكتروني ثم سجّل الدخول.');}else{await signInWithEmailAndPassword(auth,email,password);bootstrap.Modal.getOrCreateInstance($('studentAuthModal')).hide();form.reset();gm.showToast('تم تسجيل الدخول.');}}catch(error){gm.showToast(error.code==='auth/invalid-credential'?'بيانات الدخول غير صحيحة.':error.code==='auth/email-already-in-use'?'هذا البريد مسجل بالفعل.':'تعذر إتمام العملية. تحقق من البيانات وحاول مجددًا.');}});}
 }
 window.GreenMind=gm;
@@ -33,6 +42,7 @@ if (!location.pathname.toLowerCase().endsWith('/admin.html')) {
   document.body.appendChild(nav);
 }
 document.querySelectorAll('.menu-toggle').forEach(button => button.addEventListener('click', () => button.setAttribute('aria-expanded', String(document.getElementById(button.dataset.target)?.classList.toggle('show')))));
+
 
 
 

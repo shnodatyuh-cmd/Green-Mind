@@ -55,6 +55,7 @@
     {
       "source": ".",
       "codebase": "default",
+      "runtime": "nodejs22",
       "ignore": [
         "node_modules",
         "**/.*",
@@ -80,8 +81,10 @@
         "README.md",
         "provision-user.js",
         "security-rules.test.js",
-        "greenmind-mark.svg"
+        "greenmind-mark.svg",
+        "alzayed-school-logo.jpeg"
       ]
     }
   ]
 }
+
